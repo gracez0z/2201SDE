@@ -1,0 +1,220 @@
+---
+AWSTemplateFormatVersion: '2010-09-09'
+Description: Cloudformation template to create all SG and roles
+Parameters:
+  VpcId:
+    Type: AWS::EC2::VPC::Id
+    Description: Select a VPC with Subnets covering 2 Availability zone at least.
+    MinLength: 1
+Resources:
+  WorkerNodeSG:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: WorkerNode security group
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: '30000'
+          ToPort: '32767'
+          CidrIp: 0.0.0.0/0
+        - IpProtocol: tcp
+          FromPort: '22'
+          ToPort: '22'
+          CidrIp: 0.0.0.0/0
+      Tags:
+        -
+          Key: Name
+          Value: WorkerNodeSG
+      VpcId: !Ref VpcId
+  NodeSecurityGroupIngress:
+    Type: AWS::EC2::SecurityGroupIngress
+    DependsOn: WorkerNodeSG
+    Properties:
+      Description: Allow node to communicate with each other
+      GroupId: !Ref WorkerNodeSG
+      SourceSecurityGroupId: !Ref WorkerNodeSG
+      IpProtocol: '-1'
+      FromPort: 0
+      ToPort: 65535
+  CodeBuildRole:
+    Type: "AWS::IAM::Role"
+    Properties: 
+      AssumeRolePolicyDocument: 
+        Version: "2012-10-17"
+        Statement: 
+          - 
+            Effect: "Allow"
+            Principal: 
+              Service: 
+                - "codebuild.amazonaws.com"
+            Action: 
+              - "sts:AssumeRole"
+      ManagedPolicyArns:
+        - "arn:aws:iam::aws:policy/AWSLambda_FullAccess"
+        - "arn:aws:iam::aws:policy/AmazonSNSFullAccess"
+      Policies:
+        - PolicyName: "CodeBuildRolePolicy"
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              -
+                Effect: "Allow"
+                Action: 
+                  - "ec2:*"
+                  - "cloudwatch:*"
+                  - "s3:*"
+                  - "logs:*"
+                  - "ecr:*"
+                  - "cloudfront:*"
+                  - "cloudformation:*"
+                  - "iam:*"
+                  - "lambda:*"
+                  - "events:*"
+                  - "apigateway:*"
+                  - "es:*"
+                  - "sqs:*"
+                  - "secretsmanager:*"
+                Resource: "*"
+        - PolicyName: CodeBuildRolePolicyManagedSSO
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Sid: IAMPermissions
+                Effect: Allow
+                Action:
+                  - iam:CreateRole
+                  - iam:GetRole
+                  - iam:DeleteRole
+                  - iam:PutRolePolicy
+                  - iam:DeleteRolePolicy
+                  - iam:AttachRolePolicy
+                  - iam:DetachRolePolicy
+                  - iam:PassRole
+                Resource: "*"
+              - Sid: LambdaPermissions
+                Effect: Allow
+                Action:
+                  - lambda:CreateFunction
+                  - lambda:DeleteFunction
+                  - lambda:InvokeFunction
+                  - lambda:GetFunction
+                  - lambda:UpdateFunctionCode
+                  - lambda:UpdateFunctionConfiguration
+                Resource: "*"
+              - Sid: DynamoDBPermissions
+                Effect: Allow
+                Action:
+                  - dynamodb:CreateTable
+                  - dynamodb:DeleteTable
+                  - dynamodb:DescribeTable
+                  - dynamodb:UpdateTable
+                  - dynamodb:GetItem
+                  - dynamodb:PutItem
+                  - dynamodb:DeleteItem
+                  - dynamodb:Query
+                  - dynamodb:Scan
+                  - dynamodb:BatchGetItem
+                  - dynamodb:BatchWriteItem
+                Resource: "*"
+              - Sid: SQSPermissions
+                Effect: Allow
+                Action:
+                  - sqs:CreateQueue
+                  - sqs:DeleteQueue
+                  - sqs:GetQueueAttributes
+                  - sqs:SetQueueAttributes
+                  - sqs:SendMessage
+                  - sqs:ReceiveMessage
+                  - sqs:DeleteMessage
+                  - sqs:GetQueueUrl
+                Resource: "*"
+              - Sid: SNSPermissions
+                Effect: Allow
+                Action:
+                  - sns:CreateTopic
+                  - sns:DeleteTopic
+                  - sns:GetTopicAttributes
+                  - sns:SetTopicAttributes
+                  - sns:Subscribe
+                  - sns:Unsubscribe
+                  - sns:Publish
+                Resource: "*"
+  CodePipelineRole:
+    Type: "AWS::IAM::Role"
+    Properties: 
+      AssumeRolePolicyDocument: 
+        Version: "2012-10-17"
+        Statement: 
+          - 
+            Effect: "Allow"
+            Principal: 
+              Service: 
+                - "codepipeline.amazonaws.com"
+            Action: 
+              - "sts:AssumeRole"
+      Policies:
+        -
+          PolicyName: "CodePipelineRolePolicy"
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              -
+                Effect: "Allow"
+                Action: 
+                  - "s3:*"
+                  - "cloudformation:*"
+                  - "codebuild:*"
+                Resource: "*"
+  LambdaRole:
+    Type: "AWS::IAM::Role"
+    Properties: 
+      AssumeRolePolicyDocument: 
+        Version: "2012-10-17"
+        Statement: 
+          - 
+            Effect: "Allow"
+            Principal: 
+              Service: 
+                - "lambda.amazonaws.com"
+            Action: 
+              - "sts:AssumeRole"
+      Policies:
+        -
+          PolicyName: "LambdaRolePolicy"
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              -
+                Effect: "Allow"
+                Action: 
+                  - "cloudwatch:*"
+                  - "s3:*"
+                  - "logs:*"
+                  - "ssm:*"
+                  - "sns:*"
+                  - "dynamodb:*"
+                  - "sqs:*"
+                Resource: "*"
+
+Outputs:
+  WorkerNodeSG:
+    Value: !Ref 'WorkerNodeSG'
+    Description: WorkerNodeSG security group
+    Export: 
+      Name: !Sub "${AWS::StackName}-WorkerNodeSG"
+  CodeBuildRole:
+    Value: !GetAtt 'CodeBuildRole.Arn'
+    Description: CodeBuildRole arn
+    Export: 
+      Name: !Sub "${AWS::StackName}-CodeBuildRole"
+  CodePipelineRole:
+    Value: !GetAtt 'CodePipelineRole.Arn'
+    Description: CodePipelineRole arn
+    Export: 
+      Name: !Sub "${AWS::StackName}-CodePipelineRole"
+  LambdaRole:
+    Value: !GetAtt 'LambdaRole.Arn'
+    Description: LambdaRole arn
+    Export:
+      Name: !Sub "${AWS::StackName}-LambdaRole"
+  StackName:
+    Value: !Ref AWS::StackName
